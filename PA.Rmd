@@ -1,0 +1,128 @@
+---
+title: "Human Activity Recognition Model"
+author: "PostalC"
+output: html_document
+keep_md: yes
+---
+  
+  
+------------------------------------------------------------------------
+  
+## Synopsis
+This study is about building model to determine how well people perform barbell lifts with data from their wearning sensors; Training data came from accelerometers on the belt, forearm, arm, and dumbell of 6 participants, which is collected from (this source)[http://groupware.les.inf.puc-rio.br/har].  
+
+The study model is built using Random Forest, the resul is about 99.4% on training data, 99.3% on cross-validation data, and 20/20 on testing data.  
+
+------------------------------------------------------------------------
+  
+## Data Downloading  
+Using devices such as *Jawbone Up, Nike FuelBand*, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify _*how much*_ of a particular activity they do, but they rarely quantify _*how well they do it*_.  
+  
+We load the required library, declare the url path and csv file name and download the training and testing csv file if they are not exist.  
+
+```{r download, echo=TRUE, results='hide'}
+library(caret)
+library(corrplot)
+library(kernlab)
+library(knitr)
+library(randomForest)
+set.seed(2202)
+## -- Check and Create dir - the default working directory us data --
+if (!file.exists("data")) {
+    dir.create("data")
+}
+# Declare file URL and destination file name
+trainUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+trainFile <- "./data/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+testFile <- "./data/pml-testing.csv"
+## -- Check if file downloaded --
+if (!file.exists(trainFile) || !file.exists(testFile)) {
+    ## -- Download file from URL --
+    download.file(trainUrl, destfile=trainFile)
+    download.file(testUrl, destfile=testFile)
+} 
+dateDownloaded <- date()
+```
+
+## Data Preprocessing  
+```{r read, echo=TRUE}
+## -- Read Data --
+trainData <- read.csv(trainFile, na.strings= c("NA",""," "))
+```
+There was a lot of NA values in the data which would create a lot of noise for the model. As a result, these columns were removed from the data set. The first eight columns that acted as identifiers for the experiment were also removed.
+
+```{r clean, echo=TRUE}
+# -- Clean the data by removing columns with NA --
+trainDataNA <- apply(trainData, 2, function(x) {sum(is.na(x))})
+trainDataClean <- trainData[,which(trainDataNA == 0)]
+# -- Remove identifier columns such as name, timestamps etc --
+trainDataClean <- trainDataClean[8:length(trainDataClean)]
+```
+
+## Data Splittng 
+The train data set was split up into `training` and `crossval` (cross-validation) sets at ratio `60:40`, this is to train the model and then test it against data it was not specifically fitted to.
+
+```{r split, echo=TRUE}
+# split the cleaned testing data into training and cross validation
+inTrain <- createDataPartition(y = trainDataClean$classe, p = 0.60, list = FALSE)
+training <- trainDataClean[inTrain, ]
+crossval <- trainDataClean[-inTrain, ]
+```
+
+## Model Fitting  
+A random forest model was selected to predict the classification because it has methods for balancing error in class population unbalanced data sets. The correlation between any two trees in the forest increases the forest error rate. Therefore, a correllation plot was produced in order to see how strong the variables relationships are with each other.
+
+```{r plot, fig.height = 6, fig.width = 8, echo=TRUE}
+# plot a correlation matrix
+correlMatrix <- cor(training[, -length(training)])
+corrplot(correlMatrix, order = "FPC", method = "circle", type = "lower", tl.cex = 0.8,  tl.col = rgb(0, 0, 0))
+```
+
+In this type of plot the dark red and blue colours indicate a highly negative and positive relationship respectively between the variables. There isn't much concern for highly correlated predictors which means that all of them can be included in the model.
+
+Then a model was fitted with the outcome set to the training class (_*60%*_ of data) and all the other variables used to predict.
+
+```{r model, echo=TRUE}
+# fit a model to predict the classe using everything else as a predictor
+model <- randomForest(classe ~ ., data = training)
+model
+```
+
+The model produced a very small _*OOB error rate*_ :: `.59%`. This was deemed satisfactory enough to progress the testing.  
+
+### Cross Validating
+The model was then used to classify the remaining _*40%*_ of data. The results were placed in a confusion matrix along with the actual classifications in order to determine the accuracy of the model.  
+
+```{r crossval, echo=TRUE}
+# crossvalidate the model using the remaining 40% of data
+predictCrossVal <- predict(model, crossval)
+confusionMatrix(crossval$classe, predictCrossVal)
+```
+  
+This model yielded a `99.3%` _*prediction accuracy*_. Again, this model proved very robust and adequete to predict new data.  
+
+### Predictions
+A separate testing dataset which reserved earlier is use for the prediction test. First it is loaded into R and cleaned in the same manner as before. Then same model was then used to predict the classifications of the 20 results of this new data.
+
+```{r predict, echo=TRUE}
+# apply the same treatment to the final testing data
+testData <- read.csv(testFile, na.strings= c("NA",""," "))
+testDataNA <- apply(testData, 2, function(x) {sum(is.na(x))})
+testDataClean <- testData[,which(testDataNA == 0)]
+testDataClean <- testDataClean[8:length(testDataClean)]
+
+# predict the classes of the test set
+testPrediction <- predict(model, testDataClean)
+testPrediction
+```
+
+### Conclusions
+With the abundance of information given from multiple measuring instruments it's possible to closely predict how well a person is preforming an excercise using a relatively simple model.   
+
+### Reference
+[1] https://class.coursera.org/predmachlearn-003/human_grading/view/courses/972148/assessments/4/submissions  
+  
+[2] http://groupware.les.inf.puc-rio.br/har  
+  
+------------------------------------------------------------------------
